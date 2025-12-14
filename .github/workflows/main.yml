@@ -2,7 +2,7 @@ name: Deploy to HF Space
 
 on:
   push:
-    branches: [main]
+    branches: [mcp/docs-search-review]
   workflow_dispatch:
 
 jobs:
@@ -15,6 +15,7 @@ jobs:
         with:
           fetch-depth: 0
           lfs: true
+          ref: mcp/docs-search-review   # 추후 main 수정
 
       - name: Setup LFS & migrate images
         run: |
@@ -25,10 +26,9 @@ jobs:
           echo "images/** filter=lfs diff=lfs merge=lfs -text" >> .gitattributes
           git add .gitattributes
           git commit -m "Add images to LFS tracking" || echo "No changes"
-          # Ensure working directory is clean
           git add -A
           git diff --cached --quiet || git commit -m "Pre-migrate: commit all changes" || echo "No changes"
-          git lfs migrate import --include="images/**" --include-ref=refs/heads/main
+          git lfs migrate import --include="images/**" --include-ref=refs/heads/mcp/docs-search-review # 추후 main 수정
 
       - name: Deploy to Hugging Face Space
         env:
@@ -37,4 +37,46 @@ jobs:
           HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
         run: |
           git remote add space https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME
-          git push --force space main
+          git push --force space mcp/docs-search-review:main # 추후 main 수정
+
+  deploy_docs_explorer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: mcp/docs-search-review   # 추후 main 수정
+
+      - name: Push hf-translation-docs-explorer to HF Space
+        env:
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_NAME_DOCS_EXPLORER: ${{ secrets.HF_SPACE_NAME_DOCS_EXPLORER }}
+        run: |
+          git subtree split --prefix=external/mcp-servers/hf-translation-docs-explorer -b docs-explorer-branch
+
+          git remote add space-docs-explorer https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME_DOCS_EXPLORER
+          git push --force space-docs-explorer docs-explorer-branch:main
+
+  deploy_translation_reviewer:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: mcp/docs-search-review   # 추후 main 수정
+
+      - name: Push hf-translation-reviewer to HF Space
+        env:
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE_NAME_TRANSLATION_REVIEWER: ${{ secrets.HF_SPACE_NAME_TRANSLATION_REVIEWER }}
+        run: |
+          git subtree split --prefix=external/mcp-servers/hf-translation-reviewer -b translation-reviewer-branch
+
+          git remote add space-translation-reviewer https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME_TRANSLATION_REVIEWER
+          git push --force space-translation-reviewer translation-reviewer-branch:main
