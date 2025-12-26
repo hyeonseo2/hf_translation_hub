@@ -4,14 +4,18 @@ import os
 import gradio as gr
 
 from services import get_available_projects, LANGUAGE_CHOICES
-from tools import list_projects, search_files, list_missing_files
+from tools import (
+    list_projects,
+    search_files,
+    list_missing_files,
+    list_outdated_files,
+)
 from setting import SETTINGS
 
 
 def ensure_mcp_support() -> None:
-    """Verify that `gradio[mcp]` is installed and enable the MCP server flag."""
     try:
-        import gradio.mcp  # noqa: F401
+        import gradio.mcp  # noqa
     except ImportError as exc:
         raise RuntimeError("Install gradio[mcp] before launching this module.") from exc
 
@@ -20,12 +24,11 @@ def ensure_mcp_support() -> None:
 
 
 def build_ui() -> gr.Blocks:
-    """Create a lightweight Gradio Blocks UI for exercising the MCP tools."""
     projects = get_available_projects()
     languages = LANGUAGE_CHOICES[:]
 
     with gr.Blocks(title=SETTINGS.ui_title) as demo:
-        gr.Markdown("# Translation MCP Server\nTry the MCP tools exposed below.")
+        gr.Markdown("# Translation MCP Server\nExtended with outdated detection.")
 
         # --- 1) Project catalog ---
         with gr.Tab("Project catalog"):
@@ -67,7 +70,7 @@ def build_ui() -> gr.Blocks:
                 api_name="translation_file_search",
             )
 
-        # --- 3) Missing docs only ---
+        # --- 3) Missing docs ---
         with gr.Tab("Missing docs"):
             missing_project = gr.Dropdown(
                 choices=projects,
@@ -93,17 +96,42 @@ def build_ui() -> gr.Blocks:
                 api_name="translation_missing_list",
             )
 
+        # --- 4) Outdated docs (NEW) ---
+        with gr.Tab("Outdated docs"):
+            outdated_project = gr.Dropdown(
+                choices=projects,
+                label="Project",
+                value=projects[0] if projects else "",
+            )
+            outdated_lang = gr.Dropdown(
+                choices=languages,
+                label="Language",
+                value=SETTINGS.default_language,
+            )
+            outdated_limit = gr.Number(
+                label="Limit",
+                value=max(SETTINGS.default_limit, 20),
+                minimum=1,
+            )
+
+            outdated_output = gr.JSON(label="outdated files")
+            gr.Button("List outdated").click(
+                fn=list_outdated_files,
+                inputs=[outdated_project, outdated_lang, outdated_limit],
+                outputs=outdated_output,
+                api_name="translation_outdated_list",
+            )
+
     return demo
 
 
 ensure_mcp_support()
 
 ui = build_ui()
-
 ui.launch(
     server_name="0.0.0.0",
     server_port=int(os.environ.get("PORT", "7860")),
     share=False,
     show_api=True,
-    mcp_server=True
+    mcp_server=True,
 )

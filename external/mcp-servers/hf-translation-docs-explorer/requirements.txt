@@ -9,3 +9,4 @@ langchain-core
 langchain-community
 boto3
 PyYAML
+gitpython>=3.1.0 
