@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 GitHub Agent for MCP Server - copied and adapted from original GitHubPRAgent.
 Removes LLM dependencies - PR title/description provided by MCP client.
@@ -51,6 +53,19 @@ class GitHubAgent:
         base_branch: str = "main",
     ) -> Dict[str, Any]:
         """Execute translation document PR creation workflow (without LLM)."""
+        if not GITHUB_AVAILABLE:        
+            target_filepath = filepath.replace("/en/", f"/{target_language}/")
+            file_name = filepath.split('/')[-1].replace('.md', '').replace('_', '-')
+            branch_name = f"{target_language}-{file_name}"
+         
+            return {
+                "status": "success",
+                "simulation": True,
+                "branch": branch_name,
+                "file_path": target_filepath,
+                "pr_url": f"https://github.com/{self.user_owner}/{self.user_repo}/pull/1234",
+                "message": "PyGithub not installed – simulation mode"
+                }
         try:
             # Generate file path and branch name
             target_filepath = filepath.replace("/en/", f"/{target_language}/")
@@ -119,10 +134,10 @@ class GitHubAgent:
                 return f"SUCCESS: Branch '{branch_name}' created successfully"
             return f"ERROR: Branch '{branch_name}' creation failed"
             
-        except GithubException as e:
-            if e.status == 422 and "Reference already exists" in str(e.data):
-                return f"WARNING: Branch '{branch_name}' already exists (continuing)"
-            return f"ERROR: Branch creation failed: {str(e)}"
+        # except GithubException as e:
+        #     if e.status == 422 and "Reference already exists" in str(e.data):
+        #         return f"WARNING: Branch '{branch_name}' already exists (continuing)"
+        #     return f"ERROR: Branch creation failed: {str(e)}"
         except Exception as e:
             return f"ERROR: Branch creation error: {str(e)}"
 
@@ -143,7 +158,7 @@ class GitHubAgent:
                 )
                 return f"SUCCESS: File created - {file_path}"
                 
-            except GithubException as e:
+            except Exception as e:
                 if e.status == 422:
                     # File exists, try to update
                     try:
@@ -186,11 +201,11 @@ class GitHubAgent:
             )
             return f"PR creation successful: {pr.html_url}"
             
-        except GithubException as e:
-            if e.status == 422:
-                error_msg = e.data.get("message", "Unknown error")
-                return f"ERROR: PR creation failed (422): {error_msg}"
-            return f"ERROR: PR creation failed: {str(e)}"
+        # except GithubException as e:
+        #     if e.status == 422:
+        #         error_msg = e.data.get("message", "Unknown error")
+        #         return f"ERROR: PR creation failed (422): {error_msg}"
+        #     return f"ERROR: PR creation failed: {str(e)}"
         except Exception as e:
             return f"ERROR: PR creation error: {str(e)}"
 
