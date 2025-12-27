@@ -1,27 +1,27 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
+
+import git
 
 from adapters import fetch_document_paths
 from setting import SETTINGS
 
 
-# Gradio / UI 에 노출할 언어 선택지
-LANGUAGE_CHOICES: List[str] = [
-    "ko",
-    "ja",
-    "zh",
-    "fr",
-    "de",
-]
+# ------------------------------
+# Language choices (UI)
+# ------------------------------
+LANGUAGE_CHOICES: List[str] = ["ko", "ja", "zh", "fr", "de"]
 
 
+# ------------------------------
+# Project model
+# ------------------------------
 @dataclass(frozen=True)
 class Project:
-    """Store the minimum metadata required for documentation lookups."""
-
     slug: str
     name: str
     repo_url: str
@@ -30,99 +30,259 @@ class Project:
 
     @property
     def repo_path(self) -> str:
-        """Return the ``owner/repo`` identifier for GitHub API requests."""
         return self.repo_url.replace("https://github.com/", "")
 
 
-# 지원 프로젝트 정의
+# ------------------------------
+# Supported projects
+# ------------------------------
 PROJECTS: Dict[str, Project] = {
     "transformers": Project(
         slug="transformers",
         name="Transformers",
         repo_url="https://github.com/huggingface/transformers",
         docs_path="docs/source",
-        tree_api_url=(
-            "https://api.github.com/repos/huggingface/transformers/git/trees/main?recursive=1"
-        ),
+        tree_api_url="https://api.github.com/repos/huggingface/transformers/git/trees/main?recursive=1",
     ),
     "smolagents": Project(
         slug="smolagents",
         name="SmolAgents",
         repo_url="https://github.com/huggingface/smolagents",
         docs_path="docs/source",
-        tree_api_url=(
-            "https://api.github.com/repos/huggingface/smolagents/git/trees/main?recursive=1"
-        ),
+        tree_api_url="https://api.github.com/repos/huggingface/smolagents/git/trees/main?recursive=1",
     ),
 }
 
 
+# ------------------------------
+# Repo & result cache
+# ------------------------------
+REPO_BASE = Path("/data/repos")
+CACHE_BASE = Path("/data/cache")
+CACHE_BASE.mkdir(parents=True, exist_ok=True)
+
+
+def _prepare_repo(project: Project) -> git.Repo:
+    repo_dir = REPO_BASE / project.slug
+    repo_dir.parent.mkdir(parents=True, exist_ok=True)
+
+    if repo_dir.exists():
+        repo = git.Repo(repo_dir)
+        repo.git.fetch()
+        repo.git.reset("--hard", "origin/main")
+    else:
+        repo = git.Repo.clone_from(project.repo_url, repo_dir)
+
+    return repo
+
+
+def _cache_path(project: str, lang: str) -> Path:
+    return CACHE_BASE / f"{project}_{lang}_status.json"
+
+
+def _load_cached_status(project: str, lang: str, head_sha: str):
+    path = _cache_path(project, lang)
+    if not path.exists():
+        return None
+
+    try:
+        data = json.loads(path.read_text())
+        if data.get("head_sha") == head_sha:
+            return data["payload"]
+    except Exception:
+        return None
+
+    return None
+
+
+def _save_cached_status(
+    project: str,
+    lang: str,
+    head_sha: str,
+    payload: Dict[str, Any],
+):
+    path = _cache_path(project, lang)
+    path.write_text(
+        json.dumps(
+            {
+                "head_sha": head_sha,
+                "payload": payload,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+# ------------------------------
+# Helpers
+# ------------------------------
 def get_available_projects() -> List[str]:
-    """Return the list of project slugs supported by this module."""
     return sorted(PROJECTS.keys())
 
 
 def _iter_english_docs(all_docs: Iterable[str], docs_root: str) -> Iterable[Path]:
-    """Yield English documentation files as ``Path`` objects."""
     english_root = Path(docs_root) / "en"
 
     for doc_path in all_docs:
         if not doc_path.endswith(".md"):
             continue
-
         path = Path(doc_path)
         try:
-            # en/ 아래에 있는지 필터링
             path.relative_to(english_root)
         except ValueError:
             continue
-
         yield path
 
 
-def _compute_missing_translations(
+def _last_commit(repo: git.Repo, repo_root: Path, file_path: Path):
+    if not file_path.exists():
+        return None
+    rel = file_path.relative_to(repo_root)
+    for c in repo.iter_commits(paths=str(rel), max_count=1):
+        return c
+    return None
+
+
+def _last_content_change_commit(
+    repo: git.Repo,
+    repo_root: Path,
+    file_path: Path,
+    max_commits: int = 200,
+):
+    if not file_path.exists():
+        return None
+
+    rel = file_path.relative_to(repo_root)
+    for c in repo.iter_commits(paths=str(rel), max_count=max_commits):
+        stats = c.stats.files.get(str(rel))
+        if stats and (stats.get("insertions", 0) > 0 or stats.get("deletions", 0) > 0):
+            return c
+    return None
+
+
+# ------------------------------
+# Core computation (cached)
+# ------------------------------
+def _compute_translation_status(
     project_key: str,
     language: str,
     limit: int,
-) -> Tuple[str, List[str], Project]:
-    """
-    영어 기준으로 누락 번역 파일을 계산하고,
-    마크다운 요약 리포트 + 누락 경로 리스트 + Project 메타데이터를 반환.
-    """
+) -> Tuple[str, List[Dict[str, Any]], Project]:
     project = PROJECTS[project_key]
+    repo = _prepare_repo(project)
+    repo_root = Path(repo.working_tree_dir)
 
+    head_sha = repo.head.commit.hexsha
+
+    cached = _load_cached_status(project_key, language, head_sha)
+    if cached:
+        status_report = cached["status_report"]
+        all_items = cached["items"]
+        candidates = [
+            item for item in all_items
+            if item["missing"] or item["outdated"]
+        ][:limit]
+        return status_report, candidates, project
+
+    # -------- FULL SCAN (HEAD 변경 시에만 실행) --------
     all_paths = fetch_document_paths(project.tree_api_url)
     english_docs = list(_iter_english_docs(all_paths, project.docs_path))
     english_total = len(english_docs)
-
-    missing: List[str] = []
     docs_set = set(all_paths)
+
+    missing_count = 0
+    outdated_count = 0
+    up_to_date_count = 0
+
+    per_doc_status: List[Dict[str, Any]] = []
 
     for english_doc in english_docs:
         relative = english_doc.relative_to(Path(project.docs_path) / "en")
-        translated_path = str(Path(project.docs_path) / language / relative)
+        translated_path = Path(project.docs_path) / language / relative
 
-        if translated_path not in docs_set:
-            # 누락된 경우: 기준은 영어 경로(en/...)
-            missing.append(str(english_doc))
-            if len(missing) >= limit:
-                break
+        en_file = repo_root / english_doc
+        ko_file = repo_root / translated_path
 
-    missing_count = len(missing)
-    percentage = (missing_count / english_total * 100) if english_total else 0.0
+        en_change = _last_content_change_commit(repo, repo_root, en_file)
+        ko_commit = _last_commit(repo, repo_root, ko_file)
 
-    report = (
-        "| Item | Count | Percentage |\n"
-        "|------|-------|------------|\n"
-        f"| English docs | {english_total} | - |\n"
-        f"| Missing translations | {missing_count} | {percentage:.2f}% |"
+        missing = str(translated_path) not in docs_set
+        outdated = False
+
+        if missing:
+            missing_count += 1
+            status = "missing"
+        else:
+            if en_change and ko_commit and ko_commit.committed_datetime < en_change.committed_datetime:
+                outdated = True
+                outdated_count += 1
+                status = "outdated"
+            else:
+                up_to_date_count += 1
+                status = "up_to_date"
+
+        per_doc_status.append(
+            {
+                "path": str(english_doc),
+                "status": status,
+                "missing": missing,
+                "outdated": outdated,
+                "en_latest_change": (
+                    en_change.committed_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                    if en_change
+                    else None
+                ),
+                "ko_base_commit": (
+                    ko_commit.committed_datetime.strftime("%Y-%m-%d %H:%M:%S")
+                    if ko_commit
+                    else None
+                ),
+            }
+        )
+
+    translatable = english_total - missing_count
+    coverage_pct = (
+        (up_to_date_count / translatable * 100)
+        if translatable > 0
+        else 0.0
     )
 
-    return report, missing, project
+    status_report = (
+        "| Item | Count |\n"
+        "|------|-------|\n"
+        f"| English docs | {english_total} |\n"
+        f"| Missing translations | {missing_count} |\n"
+        f"| Translatable docs | {translatable} |\n"
+        f"| Up-to-date translations | {up_to_date_count} |\n"
+        f"| Outdated translations | {outdated_count} |\n\n"
+        f"**Translation coverage (of translatable docs): {coverage_pct:.2f}%**"
+    )
+
+    payload = {
+        "status_report": status_report,
+        "items": per_doc_status,
+    }
+
+    _save_cached_status(
+        project=project_key,
+        lang=language,
+        head_sha=head_sha,
+        payload=payload,
+    )
+
+    candidates = [
+        item for item in per_doc_status
+        if item["missing"] or item["outdated"]
+    ][:limit]
+
+    return status_report, candidates, project
 
 
+# ------------------------------
+# Public builders
+# ------------------------------
 def build_project_catalog(default: str | None) -> Dict[str, Any]:
-    """Build the project catalog payload (API-neutral, pure logic)."""
     slugs = get_available_projects()
     default = default if default in slugs else None
 
@@ -148,47 +308,26 @@ def build_search_response(
     limit: int,
     include_status_report: bool,
 ) -> Dict[str, Any]:
-    """
-    누락 번역 파일 후보 + (선택) 상태 리포트를 포함한 검색 응답.
-    MCP / Gradio 에서 사용 가능한 JSON 형태.
-    """
-    project = project.strip()
-    lang = lang.strip()
-    limit = max(1, int(limit))
-
-    project_config = PROJECTS[project]
-
-    status_report, candidate_paths, project_config = _compute_missing_translations(
+    status_report, items, project_cfg = _compute_translation_status(
         project_key=project,
         language=lang,
         limit=limit,
     )
 
-    repo_url = project_config.repo_url.rstrip("/")
+    repo_url = project_cfg.repo_url.rstrip("/")
 
     return {
         "type": "translation.search.response",
-        "request": {
-            "type": "translation.search.request",
-            "project": project,
-            "target_language": lang,
-            "limit": limit,
-            "include_status_report": include_status_report,
-        },
         "files": [
             {
-                "rank": index,
-                "path": path,
-                "repo_url": f"{repo_url}/blob/main/{path}",
-                "metadata": {
-                    "project": project,
-                    "target_language": lang,
-                    "docs_path": project_config.docs_path,
-                },
+                "rank": idx,
+                "path": item["path"],
+                "repo_url": f"{repo_url}/blob/main/{item['path']}",
+                "metadata": item,
             }
-            for index, path in enumerate(candidate_paths, start=1)
+            for idx, item in enumerate(items, start=1)
         ],
-        "total_candidates": len(candidate_paths),
+        "total_candidates": len(items),
         "status_report": status_report if include_status_report else None,
     }
 
@@ -198,39 +337,60 @@ def build_missing_list_response(
     lang: str,
     limit: int,
 ) -> Dict[str, Any]:
-    """
-    누락 번역 파일 목록만 제공하는 응답(JSON).
-    """
-    project = project.strip()
-    lang = lang.strip()
-    limit_int = max(1, int(limit))
-
-    status_report, missing_paths, project_config = _compute_missing_translations(
+    status_report, items, project_cfg = _compute_translation_status(
         project_key=project,
         language=lang,
-        limit=limit_int,
+        limit=limit,
     )
 
-    repo_url = project_config.repo_url.rstrip("/")
+    repo_url = project_cfg.repo_url.rstrip("/")
+    missing_items = [i for i in items if i["missing"]]
 
     return {
         "type": "translation.missing_list",
         "project": project,
         "target_language": lang,
-        "limit": limit_int,
-        "count": len(missing_paths),
+        "count": len(missing_items),
         "files": [
             {
-                "rank": index,
-                "path": path,
-                "repo_url": f"{repo_url}/blob/main/{path}",
-                "metadata": {
-                    "project": project,
-                    "target_language": lang,
-                    "docs_path": project_config.docs_path,
-                },
+                "rank": idx,
+                "path": item["path"],
+                "repo_url": f"{repo_url}/blob/main/{item['path']}",
+                "metadata": item,
             }
-            for index, path in enumerate(missing_paths, start=1)
+            for idx, item in enumerate(missing_items, start=1)
         ],
-        "status_report": status_report,  # 필요 없다면 제거 가능
+        "status_report": status_report,
+    }
+
+
+def build_outdated_list_response(
+    project: str,
+    lang: str,
+    limit: int,
+) -> Dict[str, Any]:
+    status_report, items, project_cfg = _compute_translation_status(
+        project_key=project,
+        language=lang,
+        limit=limit,
+    )
+
+    repo_url = project_cfg.repo_url.rstrip("/")
+    outdated_items = [i for i in items if i["outdated"]]
+
+    return {
+        "type": "translation.outdated_list",
+        "project": project,
+        "target_language": lang,
+        "count": len(outdated_items),
+        "files": [
+            {
+                "rank": idx,
+                "path": item["path"],
+                "repo_url": f"{repo_url}/blob/main/{item['path']}",
+                "metadata": item,
+            }
+            for idx, item in enumerate(outdated_items, start=1)
+        ],
+        "status_report": status_report,
     }
