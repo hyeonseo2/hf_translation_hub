@@ -1,4 +1,4 @@
-gradio==5.33.0
+gradio[mcp]
 requests
 pydantic
 langchain-anthropic
@@ -9,3 +9,4 @@ langchain-core
 langchain-community
 boto3
 PyYAML
+gitpython>=3.1.0
