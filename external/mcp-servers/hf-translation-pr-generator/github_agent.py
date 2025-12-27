@@ -1,12 +1,11 @@
-from __future__ import annotations
-
 """
 GitHub Agent for MCP Server - copied and adapted from original GitHubPRAgent.
 Removes LLM dependencies - PR title/description provided by MCP client.
 """
 
+from __future__ import annotations
+
 import os
-import re
 from typing import Optional, Dict, Any
 
 try:
@@ -57,14 +56,14 @@ class GitHubAgent:
             target_filepath = filepath.replace("/en/", f"/{target_language}/")
             file_name = filepath.split('/')[-1].replace('.md', '').replace('_', '-')
             branch_name = f"{target_language}-{file_name}"
-         
+
             return {
                 "status": "success",
                 "simulation": True,
                 "branch": branch_name,
                 "file_path": target_filepath,
                 "pr_url": f"https://github.com/{self.user_owner}/{self.user_repo}/pull/1234",
-                "message": "PyGithub not installed – simulation mode"
+                "message": "PyGithub not installed - simulation mode"
                 }
         try:
             # Generate file path and branch name
