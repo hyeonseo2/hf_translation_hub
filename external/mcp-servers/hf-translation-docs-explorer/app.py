@@ -23,6 +23,7 @@ def ensure_mcp_support() -> None:
     os.environ.setdefault("GRADIO_SHOW_API", "true")
 
 
+# Wrapper functions are no longer needed - remove them
 def build_ui() -> gr.Blocks:
     projects = get_available_projects()
     languages = LANGUAGE_CHOICES[:]
@@ -32,10 +33,15 @@ def build_ui() -> gr.Blocks:
 
         # --- 1) Project catalog ---
         with gr.Tab("Project catalog"):
+            catalog_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             catalog_output = gr.JSON(label="catalog")
             gr.Button("Fetch").click(
                 fn=list_projects,
-                inputs=[],
+                inputs=[catalog_toolcallid],
                 outputs=catalog_output,
                 api_name="translation_project_catalog",
                 api_description="Fetch the list of projects from the Hugging Face Translation Documentation MCP Server",
@@ -62,11 +68,17 @@ def build_ui() -> gr.Blocks:
                 label="Include status report",
                 value=True,
             )
+            # Hidden input for toolCallId (n8n compatibility)
+            toolcallid_input = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
 
             search_output = gr.JSON(label="search result")
             gr.Button("Search").click(
-                fn=search_files,
-                inputs=[project_input, lang_input, limit_input, include_report],
+                fn=search_files,  # wrapper 제거하고 원래 함수 사용
+                inputs=[project_input, lang_input, limit_input, include_report, toolcallid_input],
                 outputs=search_output,
                 api_name="translation_file_search",
                 api_description="Search for files that need translation in a Hugging Face project",
@@ -89,11 +101,16 @@ def build_ui() -> gr.Blocks:
                 value=max(SETTINGS.default_limit, 20),
                 minimum=1,
             )
+            missing_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
 
             missing_output = gr.JSON(label="missing files")
             gr.Button("List missing").click(
                 fn=list_missing_files,
-                inputs=[missing_project, missing_lang, missing_limit],
+                inputs=[missing_project, missing_lang, missing_limit, missing_toolcallid],
                 outputs=missing_output,
                 api_name="translation_missing_list",
                 api_description="List the missing files in a Hugging Face project",
@@ -116,11 +133,16 @@ def build_ui() -> gr.Blocks:
                 value=max(SETTINGS.default_limit, 20),
                 minimum=1,
             )
+            outdated_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
 
             outdated_output = gr.JSON(label="outdated files")
             gr.Button("List outdated").click(
                 fn=list_outdated_files,
-                inputs=[outdated_project, outdated_lang, outdated_limit],
+                inputs=[outdated_project, outdated_lang, outdated_limit, outdated_toolcallid],
                 outputs=outdated_output,
                 api_name="translation_outdated_list",
                 api_description="List the outdated files in a Hugging Face project",
@@ -136,6 +158,5 @@ ui.launch(
     server_name="0.0.0.0",
     server_port=int(os.environ.get("PORT", "7860")),
     share=False,
-    show_api=True,
     mcp_server=True,
 )
