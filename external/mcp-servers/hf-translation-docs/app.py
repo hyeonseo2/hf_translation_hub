@@ -36,10 +36,15 @@ def build_ui() -> gr.Blocks:
                 label="Project",
                 value=SETTINGS.default_project,
             )
+            config_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             config_output = gr.JSON(label="Project Configuration")
             gr.Button("Get Config").click(
                 fn=get_project_config,
-                inputs=[project_input],
+                inputs=[project_input, config_toolcallid],
                 outputs=config_output,
                 api_name="translation_get_project_config",
                 api_description="Get the project configuration from the Hugging Face Translation Documentation MCP Server",
@@ -63,10 +68,15 @@ def build_ui() -> gr.Blocks:
                 minimum=1,
                 maximum=100,
             )
+            search_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             search_output = gr.JSON(label="Search Results")
             gr.Button("Search Files").click(
                 fn=search_translation_files,
-                inputs=[search_project, search_language, search_limit],
+                inputs=[search_project, search_language, search_limit, search_toolcallid],
                 outputs=search_output,
                 api_name="translation_search_files",
                 api_description="Search for files that need translation in a Hugging Face project",
@@ -87,10 +97,15 @@ def build_ui() -> gr.Blocks:
                 label="Include Metadata",
                 value=True,
             )
+            content_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             content_output = gr.JSON(label="File Content")
             gr.Button("Get Content").click(
                 fn=get_file_content,
-                inputs=[content_project, content_file_path, content_include_metadata],
+                inputs=[content_project, content_file_path, content_include_metadata, content_toolcallid],
                 outputs=content_output,
                 api_name="translation_get_file_content",
                 api_description="Get the content of a file from the Hugging Face Translation Documentation MCP Server",
@@ -122,10 +137,15 @@ def build_ui() -> gr.Blocks:
                 label="File Path (optional)",
                 placeholder="docs/source/en/model_doc/bert.md",
             )
+            prompt_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             prompt_output = gr.JSON(label="Translation Prompt")
             gr.Button("Generate Prompt").click(
                 fn=generate_translation_prompt,
-                inputs=[prompt_target_language, prompt_content, prompt_additional, prompt_project, prompt_file_path],
+                inputs=[prompt_target_language, prompt_content, prompt_additional, prompt_project, prompt_file_path, prompt_toolcallid],
                 outputs=prompt_output,
                 api_name="translation_generate_prompt",
                 api_description="Generate a translation prompt for a given content. After generating the prompt, you can translate the content using the prompt.",
@@ -152,10 +172,15 @@ def build_ui() -> gr.Blocks:
                 label="File Path (optional)",
                 placeholder="docs/source/en/model_doc/bert.md",
             )
+            validate_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             validate_output = gr.JSON(label="Validation Results")
             gr.Button("Validate").click(
                 fn=validate_translation,
-                inputs=[validate_original, validate_translated, validate_language, validate_file_path],
+                inputs=[validate_original, validate_translated, validate_language, validate_file_path, validate_toolcallid],
                 outputs=validate_output,
                 api_name="translation_validate",
                 api_description="Validate the translated content for quality and formatting",
@@ -182,10 +207,15 @@ def build_ui() -> gr.Blocks:
                 label="Target Language",
                 value=SETTINGS.default_language,
             )
+            save_toolcallid = gr.Textbox(
+                label="Tool Call ID",
+                value="",
+                visible=False,
+            )
             save_output = gr.JSON(label="Save Results")
             gr.Button("Save Translation").click(
                 fn=save_translation_result,
-                inputs=[save_project, save_original_path, save_content, save_language],
+                inputs=[save_project, save_original_path, save_content, save_language, save_toolcallid],
                 outputs=save_output,
                 api_name="translation_save_result",
                 api_description="Save the translation result to the file system",
