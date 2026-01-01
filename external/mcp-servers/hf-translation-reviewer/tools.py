@@ -15,13 +15,23 @@ from services import (
 # Token resolution (infra concern, NOT MCP input)
 # ---------------------------------------------------------------------
 
-def github_token_or_env(token: str = "") -> str:
+def github_token_or_env(token: str = "", toolCallId: str = "") -> str:
     """
     Resolve GitHub token.
 
     Priority:
     1. Explicit token (usually from UI, if ever passed)
     2. Environment variables (GITHUB_TOKEN, HF_GITHUB_TOKEN, etc.)
+
+    Args:
+        token: The token to use for the GitHub request.
+        toolCallId: The ID of the tool call.
+
+    Returns:
+        A string containing the resolved GitHub token.
+
+    Raises:
+        Exception: If the GitHub token cannot be resolved.
     """
     return resolve_github_token(token)
 
@@ -34,6 +44,7 @@ def tool_prepare(
     pr_url: str = "",
     original_path: str = "",
     translated_path: str = "",
+    toolCallId: str = ""
 ) -> Dict[str, object]:
     """
     Tool 1: Fetch files from GitHub PR and build translation review prompts.
@@ -41,6 +52,18 @@ def tool_prepare(
     MCP-safe:
     - Does NOT accept github_token as an argument
     - Token is resolved internally from environment / secrets
+
+    Args:
+        pr_url: The URL of the GitHub PR.
+        original_path: The path of the original file.
+        translated_path: The path of the translated file.
+        toolCallId: The ID of the tool call.
+
+    Returns:
+        A dictionary containing the translation review results.
+
+    Raises:
+        Exception: If the translation review cannot be prepared.
     """
     return prepare_translation_context(
         github_token=github_token_or_env(""),
@@ -59,11 +82,25 @@ def tool_review_and_emit(
     translated_path: str = "",
     translated: str = "",
     raw_review_response: str = "",
+    toolCallId: str = ""
 ) -> Dict[str, object]:
     """
     Tool 2: Parse LLM review response and emit GitHub review payload.
 
     No GitHub access required here.
+
+    Args:
+        pr_url: The URL of the GitHub PR.
+        translated_path: The path of the translated file.
+        translated: The translated content.
+        raw_review_response: The raw review response.
+        toolCallId: The ID of the tool call.
+
+    Returns:
+        A dictionary containing the review and emit payload results.
+
+    Raises:
+        Exception: If the review and emit payload cannot be parsed.
     """
     return review_and_emit_payload(
         pr_url=pr_url,
@@ -82,12 +119,26 @@ def tool_submit_review(
     translated_path: str = "",
     payload_or_review: Dict[str, object] | None = None,
     allow_self_request_changes: bool = True,
+    toolCallId: str = ""
 ) -> Dict[str, object]:
     """
     Tool 3: Submit review payload to GitHub PR.
 
     MCP-safe:
     - Token resolved internally
+
+    Args:
+        pr_url: The URL of the GitHub PR.
+        translated_path: The path of the translated file.
+        payload_or_review: The payload or review to submit.
+        allow_self_request_changes: Whether to allow self request changes.
+        toolCallId: The ID of the tool call.
+
+    Returns:
+        A dictionary containing the review submission results.
+
+    Raises:
+        Exception: If the review cannot be submitted.
     """
     if payload_or_review is None:
         raise ValueError("payload_or_review is required")
@@ -113,6 +164,7 @@ def tool_end_to_end(
     save_path: str = "review.json",
     submit_review_flag: bool = False,
     raw_review_response: str = "",
+    toolCallId: str = ""
 ) -> Dict[str, object]:
     """
     Tool 4: End-to-end execution:
@@ -123,6 +175,22 @@ def tool_end_to_end(
 
     MCP-safe:
     - Token resolved internally
+
+    Args:
+        pr_url: The URL of the GitHub PR.
+        original_path: The path of the original file.
+        translated_path: The path of the translated file.
+        save_review: Whether to save the review.
+        save_path: The path to save the review.
+        submit_review_flag: Whether to submit the review.
+        raw_review_response: The raw review response.
+        toolCallId: The ID of the tool call.
+
+    Returns:
+        A dictionary containing the end-to-end execution results.
+
+    Raises:
+        Exception: If the end-to-end execution cannot be performed.
     """
     return run_end_to_end(
         github_token=github_token_or_env(""),
