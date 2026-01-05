@@ -120,7 +120,8 @@ These MCP servers can be used from any MCP-compatible client, including:
 - Custom Python / Node.js agents
 - n8n MCP workflows
 
-### 🔍 Step 1: Discover translation targets
+
+> The example below demonstrates a typical discovery interaction with the Docs Explorer MCP.
 
 <details>
 <summary>Show MCP request example</summary>
@@ -140,58 +141,13 @@ These MCP servers can be used from any MCP-compatible client, including:
     }
   }
 }
-````
-
-</details>
-
----
-
-### 🤖 Step 2: Translate a document
-
-<details>
-<summary>Show MCP request example</summary>
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "call-2",
-  "method": "tools/call",
-  "params": {
-    "name": "hf_translation_translate_document",
-    "arguments": {
-      "source_path": "docs/source/en/agents.md",
-      "target_lang": "ko"
-    }
-  }
-}
 ```
 
 </details>
 
----
+> Translation and GitHub PR creation are handled by their respective MCP servers.
+> For authoritative tool names, parameters, and end-to-end examples, please refer to the project overview: [https://hugging-face-krew.github.io/translation-mcp-project-overview/](https://hugging-face-krew.github.io/translation-mcp-project-overview/)
 
-### 📝 Step 3: Create a GitHub PR
-
-<details>
-<summary>Show MCP request example</summary>
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "call-3",
-  "method": "tools/call",
-  "params": {
-    "name": "hf_translation_pr_create",
-    "arguments": {
-      "base_branch": "main",
-      "title": "[ko] Translate agents.md",
-      "body": "Automated translation via hf-translation-hub"
-    }
-  }
-}
-```
-
-</details>
 
 ---
 
@@ -256,5 +212,6 @@ Contributions are welcome and encouraged.
 * Keep MCP servers single-responsibility
 * Avoid hidden cross-server side effects
 * Preserve tool input/output contracts
+
 
 
